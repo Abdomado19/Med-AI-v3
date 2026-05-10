@@ -19,7 +19,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useState } from "react"
-import { Loader } from "lucide-react"
+import { Loader, Eye, EyeOff } from "lucide-react"
 
 
 
@@ -35,6 +35,7 @@ type formData  = z.infer<typeof formSchema>
 
 export default function LoginForm() {
   const [isLoading, setIsLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   const searchParams = useSearchParams();
   const  redirectURL = searchParams.get('url')
@@ -51,18 +52,18 @@ export default function LoginForm() {
 
   async function onSubmit(data: formData) {
     setIsLoading(true)
-    const response = await signIn( "credentials" , {
+    const response = await signIn("credentials", {
       email: data.email,
       password: data.password,
-      redirect: true,
-      callbackUrl:redirectURL ? redirectURL :  "/chat",
-      
+      redirect: false,
     })
-    if (response?.ok) {
-      toast.success("Success Login")
-      router.push("/chat")
-    }else {
-      toast.error(response?.error + "")
+    
+    if (response?.ok && !response?.error) {
+      toast.success("Login Successful")
+      // Hard redirect to force a full server re-render of the Navbar and Session
+      window.location.href = redirectURL ? redirectURL : "/chat"
+    } else {
+      toast.error(response?.error || "Invalid email or password")
     }
     setIsLoading(false)
   }
@@ -101,12 +102,23 @@ export default function LoginForm() {
                   <FieldLabel htmlFor="form-rhf-demo-password">
                     Password
                   </FieldLabel>
-                  <Input
-                    {...field}
-                    type="password"
-                    id="form-rhf-demo-password"
-                    aria-invalid={fieldState.invalid}
-                  />
+                  <div className="relative">
+                    <Input
+                      {...field}
+                      type={showPassword ? "text" : "password"}
+                      id="form-rhf-demo-password"
+                      aria-invalid={fieldState.invalid}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-primary transition-colors"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                   {fieldState.invalid && (
                     <FieldError errors={[fieldState.error]} />
                   )}

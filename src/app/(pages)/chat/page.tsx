@@ -1,51 +1,42 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import { Field, FieldDescription } from "@/components/ui/field";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-
-async function sendMessageAction(message: string) {
-  const loggedIn = false;
-  if (!loggedIn) return null;
-
-  return { message: "AI reply to: " + message };
-}
+import { UploadCloud, Scan, Activity, Loader2, Layers, AlertCircle, Send } from "lucide-react";
 
 export default function ChatPage() {
-  const router = useRouter();
-  const [messages, setMessages] = useState<{ role: "user" | "ai"; text: string }[]>([]);
-  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<{ role: "user" | "ai"; text: string; type?: "image" }[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isEnterprise, setIsEnterprise] = useState(false);
+  const [inputText, setInputText] = useState("");
+  
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
+  const { data: session } = useSession();
+  const router = useRouter();
 
-    const data = await sendMessageAction(input);
-    if (data == null) {
+  // Combine local storage flag with active session
+  const hasEnterpriseAccess = isEnterprise && !!session;
+
+  // Check for enterprise unlock
+  useEffect(() => {
+    const enterpriseStatus = localStorage.getItem("med_ai_enterprise");
+    if (session?.user?.email && enterpriseStatus === session.user.email) {
+      setIsEnterprise(true);
+    } else {
+      setIsEnterprise(false);
+    }
+  }, [session]);
+
+  // Auto-scrolling disabled as per user request
+
+  const handleUploadClick = () => {
+    if (!session) {
       router.push("/login");
       return;
     }
-
-    setMessages([...messages, { role: "user", text: input }]);
-    setInput("");
-
-    // will add AI reply
-    setMessages((prev) => [...prev, { role: "ai", text: data.message }]);
-  };
-
-  const handleUploadClick = () => {
     fileInputRef.current?.click();
   };
 
@@ -53,111 +44,240 @@ export default function ChatPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const data = await sendMessageAction(`Uploaded image: ${file.name}`);
-    if (data == null) {
-      router.push("/login");
-      return;
-    }
+    event.target.value = ''; // Reset input
+    setIsProcessing(true);
+    
+    // Add user message (image preview) immediately
+    const tempUrl = URL.createObjectURL(file);
+    setMessages((prev) => [...prev, { role: "user", text: tempUrl, type: "image" }]);
 
-    setMessages([...messages, { role: "user", text: `Uploaded image: ${file.name}` }]);
-    setMessages((prev) => [...prev, { role: "ai", text: data.message }]);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/chat", { method: "POST", body: formData });
+      
+      if (!res.ok) {
+        setMessages((prev) => [...prev, { role: "ai", text: "Inference Error: The neural network could not process this image matrix." }]);
+      } else {
+        const aiRes = await res.json();
+        setMessages((prev) => [...prev, { role: "ai", text: aiRes.message }]);
+      }
+    } catch (error) {
+      setMessages((prev) => [...prev, { role: "ai", text: "System Error: Connection to the inference engine was lost." }]);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!inputText.trim()) return;
+
+    const userMessage = inputText;
+    setInputText("");
+    setMessages((prev) => [...prev, { role: "user", text: userMessage }]);
+    setIsProcessing(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("message", userMessage);
+
+      const res = await fetch("/api/chat", { method: "POST", body: formData });
+      
+      if (!res.ok) {
+        setMessages((prev) => [...prev, { role: "ai", text: "System Error: Connection to the inference engine was lost." }]);
+      } else {
+        const aiRes = await res.json();
+        setMessages((prev) => [...prev, { role: "ai", text: aiRes.message }]);
+      }
+    } catch (error) {
+       setMessages((prev) => [...prev, { role: "ai", text: "System Error: Could not reach the server." }]);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen ">
-      <Card className="w-full max-w-2xl rounded-xl shadow-lg flex flex-col mb-16">
-        <CardHeader>
-          <CardTitle className="text-center text-2xl font-bold">Med.AI Assistant</CardTitle>
-          <CardDescription className="text-center">
-            Chat with the AI or upload an image and let it do the rest
-          </CardDescription>
-        </CardHeader>
+    <div className="flex flex-col min-h-screen pt-24 bg-background relative overflow-hidden">
+      {/* Ambient background glows */}
+      <div className="absolute top-1/4 left-0 w-[500px] h-[500px] rounded-full bg-primary/5 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-1/4 right-0 w-[400px] h-[400px] rounded-full bg-[oklch(0.45_0.18_240/0.05)] blur-[100px] pointer-events-none" />
 
-        <CardContent className="flex flex-col h-[70vh]">
-          {/* Chat messages */}
-          <div className="flex-1 overflow-y-auto space-y-3 p-4 bg-gray-100 rounded-md">
+      {/* Main Chat Area */}
+      <main className="flex-1 overflow-y-auto pb-40 px-[3vw] xl:px-[15vw] relative z-10 scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent">
+        
+        {messages.length === 0 ? (
+          // --- Empty State ---
+          <div className="h-full flex flex-col items-center justify-center animate-slide-up mt-20">
+            <div className="relative w-24 h-24 rounded-3xl bg-card border border-white/10 flex items-center justify-center shadow-2xl mb-8 group">
+              <div className="absolute inset-0 bg-primary/20 rounded-3xl group-hover:bg-primary/30 transition-colors" />
+              <Scan className="w-12 h-12 text-primary relative z-10 animate-pulse" />
+              <div className="absolute inset-0 radar-sweep rounded-3xl opacity-50" />
+            </div>
+            <h2 className="text-3xl font-black tracking-tight mb-3">
+              {hasEnterpriseAccess ? "Enterprise Chat " : "Inference Engine "}<span className="text-primary">Ready</span>
+            </h2>
+            <p className="text-muted-foreground text-center max-w-md">
+              {hasEnterpriseAccess 
+                ? "Upload a standard high-resolution bone X-ray, or ask follow-up questions to the neural network."
+                : "Upload a standard high-resolution bone X-ray to begin. The AI will analyze cortical irregularities and provide an instant preliminary report."}
+            </p>
+          </div>
+        ) : (
+          // --- Messages ---
+          <div className="flex flex-col gap-8 max-w-4xl mx-auto py-8">
             {messages.map((msg, idx) => (
-              <div
-                key={idx}
-                className={`p-2 rounded-lg max-w-xs ${
-                  msg.role === "user"
-                    ? "bg-blue-500 text-white self-end"
-                    : "bg-white text-gray-800 self-start shadow"
-                }`}
-              >
-                {msg.text}
+              <div key={idx} className={`flex ${msg.role === "ai" ? "justify-start" : "justify-end"} animate-slide-up`}>
+                
+                {/* AI Avatar */}
+                {msg.role === "ai" && (
+                  <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center mr-4 shrink-0 mt-1 shadow-[0_0_15px_oklch(0.75_0.25_210/0.2)]">
+                    <Layers className="w-5 h-5 text-primary" />
+                  </div>
+                )}
+
+                <div className={`relative max-w-[85%] sm:max-w-[75%] rounded-2xl p-5 ${
+                  msg.role === "ai" 
+                    ? "bg-card/80 backdrop-blur-md border border-white/10 text-foreground shadow-lg leading-relaxed" 
+                    : "bg-primary/10 border border-primary/30 shadow-[0_0_20px_oklch(0.75_0.25_210/0.1)] p-2"
+                }`}>
+                  
+                  {msg.type === "image" ? (
+                    <div className="relative rounded-xl overflow-hidden bg-black/50 border border-white/5 group">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={msg.text} alt="X-Ray Upload" className="max-w-full h-auto object-cover max-h-[400px]" />
+                      <div className="absolute inset-0 scan-line" />
+                      <div className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2 text-xs font-mono text-primary">
+                        <Activity className="w-3 h-3" /> ANALYZING IMAGE MATRIX
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="prose prose-invert prose-p:leading-relaxed max-w-none text-[15px]">
+                      {msg.text.startsWith("Inference Error") || msg.text.startsWith("System Error") ? (
+                        <div className="flex gap-3 text-destructive/90 bg-destructive/10 p-3 rounded-lg border border-destructive/20">
+                          <AlertCircle className="w-5 h-5 shrink-0" />
+                          <span>{msg.text}</span>
+                        </div>
+                      ) : (
+                        <p className={msg.role === "user" ? "px-2 py-1" : ""}>{msg.text}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
               </div>
             ))}
+            
+            {/* Processing State indicator */}
+            {isProcessing && (
+               <div className="flex justify-start animate-slide-up">
+                 <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/30 flex items-center justify-center mr-4 shrink-0 mt-1">
+                    <Layers className="w-5 h-5 text-primary animate-pulse" />
+                  </div>
+                  <div className="bg-card/80 backdrop-blur-md border border-white/10 rounded-2xl px-5 py-4 flex items-center gap-3 shadow-lg">
+                    <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                    <span className="text-sm font-medium text-muted-foreground animate-pulse">Processing inference layers...</span>
+                  </div>
+               </div>
+            )}
+            
+            <div ref={messagesEndRef} className="h-4" />
+          </div>
+        )}
+      </main>
+
+      {/* Bottom Input Area */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 md:p-8 bg-gradient-to-t from-background via-background/95 to-transparent z-20 pointer-events-none">
+        <div className="max-w-3xl mx-auto pointer-events-auto">
+          
+          <div className="relative group">
+            {/* Outer glow */}
+            <div className={`absolute -inset-1 rounded-2xl blur-md transition-all duration-500 opacity-50 ${hasEnterpriseAccess ? 'bg-gradient-to-r from-primary/50 to-primary/20 group-hover:from-primary/70' : 'bg-gradient-to-r from-primary/30 to-primary/10 group-hover:from-primary/50'}`} />
+            
+            {/* Glassmorphic Prompt Box */}
+            <div className="relative bg-card/90 backdrop-blur-xl border border-white/10 rounded-2xl p-2 flex items-center gap-3 shadow-2xl transition-all duration-300">
+              
+              {!hasEnterpriseAccess ? (
+                // --- BASIC MODE ---
+                <div className="flex-1 px-4 py-3">
+                  <p className="text-muted-foreground/70 text-[15px] font-medium flex items-center gap-2 select-none">
+                    <Activity className="w-4 h-4 opacity-50" />
+                    Upload an X-Ray scan to begin analysis...
+                  </p>
+                </div>
+              ) : (
+                // --- ENTERPRISE MODE ---
+                <form onSubmit={handleSendMessage} className="flex-1 flex items-center pl-4 pr-2 py-1">
+                  <button type="button" onClick={handleUploadClick} title="Upload Scan" className="text-muted-foreground hover:text-primary transition-colors p-2 rounded-full hover:bg-white/5 mr-2">
+                    <UploadCloud className="w-5 h-5" />
+                  </button>
+                  <input 
+                    type="text" 
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    placeholder="Ask the AI about the scan results..."
+                    className="flex-1 bg-transparent border-none focus:outline-none focus:ring-0 text-foreground text-[15px] placeholder:text-muted-foreground/50 h-10 w-full"
+                    disabled={isProcessing}
+                  />
+                </form>
+              )}
+
+              {/* Action Button */}
+              {hasEnterpriseAccess ? (
+                 <button
+                  onClick={handleSendMessage}
+                  disabled={!inputText.trim() || isProcessing}
+                  className={`relative h-12 w-12 rounded-xl font-bold flex items-center justify-center transition-all duration-300 ${
+                    !inputText.trim() || isProcessing
+                      ? "bg-primary/20 text-primary-foreground/50 cursor-not-allowed"
+                      : "bg-primary text-primary-foreground hover:bg-primary/90 btn-glow shadow-[0_0_20px_oklch(0.75_0.25_210/0.4)]"
+                  }`}
+                >
+                  {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5 ml-1" />}
+                </button>
+              ) : (
+                <button
+                  onClick={handleUploadClick}
+                  disabled={!session || isProcessing}
+                  className={`relative h-12 px-6 rounded-xl font-bold flex items-center gap-2 transition-all duration-300 ${
+                    !session 
+                      ? "bg-muted text-muted-foreground cursor-not-allowed" 
+                      : isProcessing
+                        ? "bg-primary/50 text-primary-foreground cursor-not-allowed"
+                        : "bg-primary text-primary-foreground hover:bg-primary/90 btn-glow shadow-[0_0_20px_oklch(0.75_0.25_210/0.4)]"
+                  }`}
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Scanning
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-5 h-5" />
+                      {session ? "Upload Scan" : "Login Required"}
+                    </>
+                  )}
+                </button>
+              )}
+
+              <input
+                type="file"
+                accept="image/*"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+              />
+            </div>
           </div>
 
-          {/* Input bar */}
-          <Field className="mt-4">
-            <InputGroup>
-              <InputGroupInput
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                placeholder="Ask anything..."
-                className="px-4 py-3 text-lg rounded-l-md focus:ring-2 focus:ring-blue-500"
-              />
-              <InputGroupAddon align="inline-end" className="flex gap-2">
-                {/* Upload button */}
-                <button
-  type="button"   
-  onClick={handleUploadClick}
-  className="p-2 rounded-md hover:bg-gray-100"
->
-  📎
-</button>
+          <p className="text-center text-xs text-muted-foreground/60 mt-4 font-medium tracking-wide">
+            Med.AI can make mistakes. Always verify critical clinical data.
+          </p>
+        </div>
+      </div>
 
-               <input
-  type="file"
-  accept="image/*"
-  ref={fileInputRef}
-  onChange={handleFileChange}
-  className="hidden"
-/>
-
-                {}
-{input.trim().length > 0 ? (
-  <button
-    type="button" 
-    onClick={handleSend}
-    className="p-2 rounded-md hover:bg-gray-100"
-  >
-    {/* Send arrow icon */}
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      className="size-5 text-gray-800"
-    >
-      <path d="M2.94 2.94a.75.75 0 0 1 .82-.17l13 5a.75.75 0 0 1 0 1.38l-13 5a.75.75 0 0 1-.82-1.17L6.7 10 2.94 4.11a.75.75 0 0 1 0-1.17Z" />
-    </svg>
-  </button>
-) : (
-  <button
-    type="button"   
-    className="p-2 rounded-md hover:bg-gray-100"
-  >
-    {/* Microphone icon */}
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      className="size-5 text-gray-600"
-    >
-      <path d="M7 4a3 3 0 0 1 6 0v6a3 3 0 1 1-6 0V4Z" />
-      <path d="M5.5 9.643a.75.75 0 0 0-1.5 0V10c0 3.06 2.29 5.585 5.25 5.954V17.5h-1.5a.75.75 0 0 0 0 1.5h4.5a.75.75 0 0 0 0-1.5h-1.5v-1.546A6.001 6.001 0 0 0 16 10v-.357a.75.75 0 0 0-1.5 0V10a4.5 4.5 0 0 1-9 0v-.357Z" />
-    </svg>
-  </button>
-)}
-              </InputGroupAddon>
-            </InputGroup>
-            
-          </Field>
-        </CardContent>
-      </Card>
     </div>
   );
 }

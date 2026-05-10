@@ -10,8 +10,10 @@ export const authOptions: AuthOptions = {
         password: { placeholder: "Enter Your Password", type: "password" },
       },
       async authorize(data) {
+        // TODO: Replace with your actual backend API URL
+        const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://ecommerce.routemisr.com";
         const response = await fetch(
-          "https://ecommerce.routemisr.com/api/v1/auth/signin",
+          `${API_URL}/api/v1/auth/signin`,
           {
             method: "POST",
             body: JSON.stringify({

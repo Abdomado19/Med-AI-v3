@@ -8,13 +8,15 @@ import axios, { AxiosError } from "axios";
 import toast from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Eye, EyeOff } from 'lucide-react';
 
 
 function Register() {
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [registerMessageError, setRegisterMessageError] = useState(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showRePassword, setShowRePassword] = useState(false)
 
   const schema = z.object({
     name: z.string().nonempty("Name Is Required").min(2,"Name Must Be At Least 2 Characters").max(100),
@@ -48,7 +50,9 @@ function Register() {
   async function handleRegister(data: RegisterInterface) {
     try {
       setIsLoading(true)
-      const response  = await axios.post("https://ecommerce.routemisr.com/api/v1/auth/signup", data);
+      // TODO: Replace with your actual backend API URL
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://ecommerce.routemisr.com";
+      const response  = await axios.post(`${API_URL}/api/v1/auth/signup`, data);
       if (response.data.message === "success") {
         toast.success("Register Successfully")
         router.push("/login")
@@ -92,14 +96,24 @@ function Register() {
           {/* password */}
           <div>
             <label htmlFor='password' className='font-semibold block mb-1'>Password</label>
-            <input {...register("password")} type='password' placeholder='ahmed@123' id='password' className='block w-full border-2 border-gray-200 py-1.5 px-4 rounded-md'/>
+            <div className="relative">
+              <input {...register("password")} type={showPassword ? 'text' : 'password'} placeholder='ahmed@123' id='password' className='block w-full border-2 border-gray-200 py-1.5 px-4 pr-10 rounded-md'/>
+              <button type="button" tabIndex={-1} onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
             {formState.errors.password && <p className='text-sm text-red-700 font-semibold'>{formState.errors.password.message}</p>}
           </div>
 
           {/* rePassword */}
           <div>
-            <label htmlFor='rePassword' className='font-semibold block mb-1'>rePassword</label>
-            <input {...register("rePassword")} type='password' placeholder='ahmed@123' id='rePassword' className='block w-full border-2 border-gray-200 py-1.5 px-4 rounded-md'/>
+            <label htmlFor='rePassword' className='font-semibold block mb-1'>Confirm Password</label>
+            <div className="relative">
+              <input {...register("rePassword")} type={showRePassword ? 'text' : 'password'} placeholder='ahmed@123' id='rePassword' className='block w-full border-2 border-gray-200 py-1.5 px-4 pr-10 rounded-md'/>
+              <button type="button" tabIndex={-1} onClick={() => setShowRePassword(!showRePassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showRePassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
             {formState.errors.rePassword && <p className='text-sm text-red-700 font-semibold'>{formState.errors.rePassword.message}</p>}
           </div>
 
