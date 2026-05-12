@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { UploadCloud, Scan, Activity, Loader2, Layers, AlertCircle, Send } from "lucide-react";
+import { saveScanRecord, fileToThumbnailDataUrl, getScanById } from "@/lib/chatHistory";
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<{ role: "user" | "ai"; text: string; type?: "image" }[]>([]);
@@ -16,6 +17,7 @@ export default function ChatPage() {
 
   const { data: session } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // Combine local storage flag with active session
   const hasEnterpriseAccess = isEnterprise && !!session;
@@ -29,6 +31,29 @@ export default function ChatPage() {
       setIsEnterprise(false);
     }
   }, [session]);
+
+  // Load a previous scan from profile page (?scan=<id>)
+  useEffect(() => {
+    const scanId = searchParams.get("scan");
+    if (!scanId || !session?.user?.email) return;
+    // Only load once (don't re-load if messages already exist from this scan)
+    if (messages.length > 0) return;
+
+    const record = getScanById(session.user.email, scanId);
+    if (!record) return;
+
+    const restored: { role: "user" | "ai"; text: string; type?: "image" }[] = [];
+
+    // Restore the image if we have a thumbnail
+    if (record.imageDataUrl) {
+      restored.push({ role: "user", text: record.imageDataUrl, type: "image" });
+    }
+
+    // Restore the AI report
+    restored.push({ role: "ai", text: record.aiReport });
+
+    setMessages(restored);
+  }, [searchParams, session]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scrolling disabled as per user request
 
@@ -52,6 +77,9 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, { role: "user", text: tempUrl, type: "image" }]);
 
     try {
+      // Generate a small thumbnail for history storage (in parallel with the API call)
+      const thumbnailPromise = fileToThumbnailDataUrl(file);
+
       const formData = new FormData();
       formData.append("file", file);
 
@@ -62,6 +90,17 @@ export default function ChatPage() {
       } else {
         const aiRes = await res.json();
         setMessages((prev) => [...prev, { role: "ai", text: aiRes.message }]);
+
+        // Save to scan history for the profile page
+        if (session?.user?.email && aiRes.metadata?.type === "scan") {
+          const thumbnail = await thumbnailPromise.catch(() => null);
+          saveScanRecord(session.user.email, {
+            imageDataUrl: thumbnail,
+            aiReport: aiRes.message,
+            hasTumor: aiRes.metadata.hasTumor ?? false,
+            confidence: aiRes.metadata.confidence ?? null,
+          });
+        }
       }
     } catch (error) {
       setMessages((prev) => [...prev, { role: "ai", text: "System Error: Connection to the inference engine was lost." }]);
@@ -160,7 +199,7 @@ export default function ChatPage() {
                           <span>{msg.text}</span>
                         </div>
                       ) : (
-                        <p className={msg.role === "user" ? "px-2 py-1" : ""}>{msg.text}</p>
+                        <p className={msg.role === "user" ? "px-2 py-1" : "whitespace-pre-wrap"}>{msg.text}</p>
                       )}
                     </div>
                   )}

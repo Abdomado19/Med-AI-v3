@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { User, Mail, ShieldCheck, Clock, FileText, Activity, AlertTriangle, Layers, Lock, Zap } from "lucide-react";
-import Image from "next/image";
+import { User, Mail, ShieldCheck, Clock, FileText, Activity, AlertTriangle, Layers, Lock, Zap, Scan } from "lucide-react";
+import { getScanHistory, type ScanRecord } from "@/lib/chatHistory";
 
 export default function ProfilePage() {
   const { data: session, status } = useSession();
@@ -13,6 +13,7 @@ export default function ProfilePage() {
   
   const [isEnterprise, setIsEnterprise] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [scanHistory, setScanHistory] = useState<ScanRecord[]>([]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -21,6 +22,11 @@ export default function ProfilePage() {
       setIsEnterprise(true);
     } else {
       setIsEnterprise(false);
+    }
+
+    // Load real scan history from localStorage
+    if (session?.user?.email) {
+      setScanHistory(getScanHistory(session.user.email));
     }
   }, [session]);
 
@@ -42,38 +48,9 @@ export default function ProfilePage() {
     );
   }
 
-  // --------------------------------------------------------------------------
-  // BACKEND & DATABASE TEAM: Fetch real user history here!
-  // --------------------------------------------------------------------------
-  // Example: const userHistory = await db.scans.findMany({ where: { userId: session.user.id } })
-  //
-  // For now, we use highly polished mock data to build out the UI.
-  const mockHistory = [
-    {
-      id: "scn_992812",
-      date: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
-      image: "/xray-ai.png", 
-      status: "Anomaly Detected",
-      severity: "high",
-      report: "Analysis indicates a possible periosteal reaction and cortical destruction in the distal femur. Immediate clinical correlation and biopsy are strongly recommended to rule out osteosarcoma.",
-    },
-    {
-      id: "scn_109283",
-      date: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(), // 3 days ago
-      image: "/xray-ai.png", 
-      status: "Normal",
-      severity: "low",
-      report: "Cortical integrity appears entirely intact. No osteolytic lesions, fractures, or obvious signs of malignancy detected in this scan matrix.",
-    },
-    {
-      id: "scn_001928",
-      date: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString(), // 2 weeks ago
-      image: "/xray-ai.png",
-      status: "Normal",
-      severity: "low",
-      report: "Medullary cavity shows normal radiodensity. No evidence of metastatic deposits or primary bone tumors.",
-    }
-  ];
+  // Compute real stats from history
+  const totalScans = scanHistory.length;
+  const anomalyCount = scanHistory.filter(s => s.hasTumor).length;
 
   return (
     <div className="min-h-screen pt-32 pb-24 px-[3vw] xl:px-[7vw] bg-background relative overflow-hidden">
@@ -150,17 +127,17 @@ export default function ProfilePage() {
               )}
             </div>
 
-            {/* Quick Stats */}
+            {/* Quick Stats — now powered by real data */}
             <div className="grid grid-cols-2 gap-4">
                <div className="bento-card p-4 text-center flex flex-col items-center justify-center">
                   <Activity className={`w-5 h-5 mb-2 ${isEnterprise ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <span className="text-2xl font-black">{isEnterprise ? '128' : '--'}</span>
+                  <span className="text-2xl font-black">{totalScans > 0 ? totalScans : '--'}</span>
                   <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Total Scans</span>
                </div>
                <div className="bento-card p-4 text-center flex flex-col items-center justify-center">
-                  <Clock className={`w-5 h-5 mb-2 ${isEnterprise ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <span className="text-2xl font-black">{isEnterprise ? '12h' : '--'}</span>
-                  <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Uptime</span>
+                  <AlertTriangle className={`w-5 h-5 mb-2 ${anomalyCount > 0 ? 'text-destructive' : isEnterprise ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <span className="text-2xl font-black">{totalScans > 0 ? anomalyCount : '--'}</span>
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Anomalies</span>
                </div>
             </div>
 
@@ -175,80 +152,115 @@ export default function ProfilePage() {
                  Inference History
                </h3>
                <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider bg-white/5 px-3 py-1 rounded-full border border-white/10">
-                 Last 30 Days
+                 {totalScans} {totalScans === 1 ? 'Scan' : 'Scans'}
                </span>
              </div>
 
              <div className="flex flex-col gap-4 relative">
                
-               {mockHistory.map((item, idx) => {
-                 
-                 // In Basic mode, lock everything after the first scan
-                 const isLocked = !isEnterprise && idx > 0;
-
-                 return (
-                   <div key={item.id} className={`bg-card/40 backdrop-blur-md border border-white/10 rounded-2xl p-5 shadow-lg relative group ${isLocked ? 'overflow-hidden' : 'hover:bg-card/60 transition-colors'}`}>
-                     
-                     <div className={`flex flex-col sm:flex-row gap-5 ${isLocked ? 'blur-md opacity-40 select-none pointer-events-none' : ''}`}>
-                       
-                       {/* Thumbnail */}
-                       <div className="relative w-full sm:w-32 h-32 rounded-xl overflow-hidden bg-black shrink-0 border border-white/5">
-                          <Image 
-                            src={item.image} 
-                            alt={`Scan ${item.id}`}
-                            fill
-                            className="object-cover opacity-80 group-hover:scale-105 transition-transform duration-500"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                          <span className="absolute bottom-2 left-2 text-[10px] font-mono text-white/70">{item.id}</span>
-                       </div>
-
-                       {/* Details */}
-                       <div className="flex-1 flex flex-col justify-between">
-                          <div className="flex items-start justify-between mb-2">
-                            <div>
-                              <span className="text-xs text-muted-foreground mb-1 block">
-                                {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                              </span>
-                              <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold border ${
-                                item.severity === "high" 
-                                  ? "bg-destructive/10 text-destructive border-destructive/20" 
-                                  : "bg-primary/10 text-primary border-primary/20"
-                              }`}>
-                                {item.severity === "high" ? <AlertTriangle className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
-                                {item.status}
-                              </div>
-                            </div>
-                          </div>
-
-                          <p className="text-sm text-foreground/80 leading-relaxed bg-black/20 p-3 rounded-lg border border-white/5 mt-3">
-                            <span className="text-primary font-semibold text-xs uppercase tracking-wider block mb-1">AI Report</span>
-                            {item.report}
-                          </p>
-                       </div>
-                     </div>
-
-                     {/* Lock Overlay */}
-                     {isLocked && (
-                        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/50 backdrop-blur-[2px]">
-                           <div className="w-12 h-12 rounded-full bg-black/50 border border-white/10 flex items-center justify-center mb-3">
-                              <Lock className="w-5 h-5 text-muted-foreground" />
-                           </div>
-                           <p className="font-bold text-lg tracking-tight mb-1">History Locked</p>
-                           <p className="text-sm text-muted-foreground mb-4">Enterprise License required to view older records.</p>
-                           <Link href="/upgrade" className="px-5 py-2 rounded-full bg-primary text-primary-foreground font-bold text-sm btn-glow shadow-[0_0_15px_oklch(0.75_0.25_210/0.4)] transition-transform hover:scale-105">
-                             Upgrade Now
-                           </Link>
-                        </div>
-                     )}
-
+               {scanHistory.length === 0 ? (
+                 /* ── Empty State ── */
+                 <div className="bg-card/40 backdrop-blur-md border border-white/10 rounded-2xl p-12 text-center">
+                   <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-5">
+                     <Scan className="w-8 h-8 text-primary/60" />
                    </div>
-                 );
-               })}
+                   <h4 className="text-lg font-bold mb-2">No Scans Yet</h4>
+                   <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
+                     Upload your first X-ray in the chat to see your inference history appear here.
+                   </p>
+                   <Link
+                     href="/chat"
+                     className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm btn-glow shadow-[0_0_15px_oklch(0.75_0.25_210/0.4)] transition-transform hover:scale-105"
+                   >
+                     <Scan className="w-4 h-4" /> Start Scanning
+                   </Link>
+                 </div>
+               ) : (
+                 /* ── Scan Records ── */
+                 scanHistory.map((item, idx) => {
+                  
+                  // In Basic mode, lock everything after the first scan
+                  const isLocked = !isEnterprise && idx > 0;
+
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => !isLocked && router.push(`/chat?scan=${item.id}`)}
+                      className={`bg-card/40 backdrop-blur-md border border-white/10 rounded-2xl p-5 shadow-lg relative group ${isLocked ? 'overflow-hidden' : 'hover:bg-card/60 transition-colors cursor-pointer hover:border-primary/30'}`}
+                    >
+                      
+                      <div className={`flex flex-col sm:flex-row gap-5 ${isLocked ? 'blur-md opacity-40 select-none pointer-events-none' : ''}`}>
+                        
+                        {/* Thumbnail */}
+                        <div className="relative w-full sm:w-32 h-32 rounded-xl overflow-hidden bg-black shrink-0 border border-white/5">
+                           {item.imageDataUrl ? (
+                             /* eslint-disable-next-line @next/next/no-img-element */
+                             <img 
+                               src={item.imageDataUrl} 
+                               alt={`Scan ${item.id}`}
+                               className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500"
+                             />
+                           ) : (
+                             <div className="w-full h-full flex items-center justify-center">
+                               <Scan className="w-8 h-8 text-muted-foreground/30" />
+                             </div>
+                           )}
+                           <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+                           <span className="absolute bottom-2 left-2 text-[10px] font-mono text-white/70">{item.id}</span>
+                        </div>
+
+                        {/* Details */}
+                        <div className="flex-1 flex flex-col justify-between">
+                           <div className="flex items-start justify-between mb-2">
+                             <div>
+                               <span className="text-xs text-muted-foreground mb-1 block">
+                                 {new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                               </span>
+                               <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold border ${
+                                 item.severity === "high" 
+                                   ? "bg-destructive/10 text-destructive border-destructive/20" 
+                                   : "bg-primary/10 text-primary border-primary/20"
+                               }`}>
+                                 {item.severity === "high" ? <AlertTriangle className="w-3 h-3" /> : <ShieldCheck className="w-3 h-3" />}
+                                 {item.status}
+                                 {item.confidence !== null && (
+                                   <span className="ml-1 opacity-70">
+                                     ({(item.confidence <= 1 ? (item.confidence * 100).toFixed(1) : item.confidence.toFixed(1))}%)
+                                   </span>
+                                 )}
+                               </div>
+                             </div>
+                           </div>
+
+                           <p className="text-sm text-foreground/80 leading-relaxed bg-black/20 p-3 rounded-lg border border-white/5 mt-3 whitespace-pre-wrap line-clamp-4">
+                             <span className="text-primary font-semibold text-xs uppercase tracking-wider block mb-1">AI Report</span>
+                             {item.aiReport}
+                           </p>
+                        </div>
+                      </div>
+
+                      {/* Lock Overlay */}
+                      {isLocked && (
+                         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/50 backdrop-blur-[2px]">
+                            <div className="w-12 h-12 rounded-full bg-black/50 border border-white/10 flex items-center justify-center mb-3">
+                               <Lock className="w-5 h-5 text-muted-foreground" />
+                            </div>
+                            <p className="font-bold text-lg tracking-tight mb-1">History Locked</p>
+                            <p className="text-sm text-muted-foreground mb-4">Enterprise License required to view older records.</p>
+                            <Link href="/upgrade" className="px-5 py-2 rounded-full bg-primary text-primary-foreground font-bold text-sm btn-glow shadow-[0_0_15px_oklch(0.75_0.25_210/0.4)] transition-transform hover:scale-105">
+                              Upgrade Now
+                            </Link>
+                         </div>
+                      )}
+
+                    </div>
+                  );
+                })
+               )}
 
              </div>
 
-             {isEnterprise && (
+             {isEnterprise && scanHistory.length > 5 && (
                <button className="w-full py-4 mt-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-sm font-semibold text-muted-foreground hover:text-foreground transition-colors">
                  Load Older Scans
                </button>
