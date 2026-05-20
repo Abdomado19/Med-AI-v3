@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { UploadCloud, Scan, Activity, Loader2, Layers, AlertCircle, Send } from "lucide-react";
+import Link from "next/link";
+import { UploadCloud, Scan, Activity, Loader2, Layers, AlertCircle, Send, Zap } from "lucide-react";
 import { saveScanRecord, fileToThumbnailDataUrl, getScanById } from "@/lib/chatHistory";
 
 export default function ChatPage() {
@@ -11,6 +12,10 @@ export default function ChatPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isEnterprise, setIsEnterprise] = useState(false);
   const [inputText, setInputText] = useState("");
+  const [limitStatus, setLimitStatus] = useState<{ limitReached: boolean; timeLeftStr: string }>({
+    limitReached: false,
+    timeLeftStr: "",
+  });
   
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -55,11 +60,33 @@ export default function ChatPage() {
     setMessages(restored);
   }, [searchParams, session]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Poll limit status for basic users
+  useEffect(() => {
+    if (!session?.user?.email || hasEnterpriseAccess) {
+      setLimitStatus({ limitReached: false, timeLeftStr: "" });
+      return;
+    }
+
+    const checkLimit = () => {
+      const status = getUploadLimitStatus(session.user.email!);
+      setLimitStatus(status);
+    };
+
+    checkLimit();
+    const interval = setInterval(checkLimit, 10000); // Check every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [session, hasEnterpriseAccess]);
+
   // Auto-scrolling disabled as per user request
 
   const handleUploadClick = () => {
     if (!session) {
       router.push("/login");
+      return;
+    }
+    // Prevent clicking if limit reached
+    if (!hasEnterpriseAccess && limitStatus.limitReached) {
       return;
     }
     fileInputRef.current?.click();
@@ -68,6 +95,16 @@ export default function ChatPage() {
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    // Check limit first
+    if (!hasEnterpriseAccess && session?.user?.email) {
+      const status = getUploadLimitStatus(session.user.email);
+      if (status.limitReached) {
+        alert("You have reached your daily upload limit of 1 scan per 24 hours.");
+        event.target.value = ''; // Reset input
+        return;
+      }
+    }
 
     event.target.value = ''; // Reset input
     setIsProcessing(true);
@@ -91,15 +128,34 @@ export default function ChatPage() {
         const aiRes = await res.json();
         setMessages((prev) => [...prev, { role: "ai", text: aiRes.message }]);
 
+        // If the AI returned a visualization heatmap, display it as a message
+        if (aiRes.metadata?.visualization) {
+          const visualizationUrl = `data:image/jpeg;base64,${aiRes.metadata.visualization}`;
+          setMessages((prev) => [...prev, { role: "ai", text: visualizationUrl, type: "image" }]);
+        }
+
         // Save to scan history for the profile page
         if (session?.user?.email && aiRes.metadata?.type === "scan") {
           const thumbnail = await thumbnailPromise.catch(() => null);
+          // Prioritize the AI visualization for the history record
+          const finalImage = aiRes.metadata.visualization 
+            ? `data:image/jpeg;base64,${aiRes.metadata.visualization}` 
+            : thumbnail;
+
           saveScanRecord(session.user.email, {
-            imageDataUrl: thumbnail,
+            imageDataUrl: finalImage,
             aiReport: aiRes.message,
             hasTumor: aiRes.metadata.hasTumor ?? false,
             confidence: aiRes.metadata.confidence ?? null,
           });
+
+          // Enforce daily limit for basic users
+          if (!hasEnterpriseAccess) {
+            const now = Date.now();
+            localStorage.setItem(`med_ai_last_upload_${session.user.email}`, now.toString());
+            const newStatus = getUploadLimitStatus(session.user.email);
+            setLimitStatus(newStatus);
+          }
         }
       }
     } catch (error) {
@@ -160,7 +216,9 @@ export default function ChatPage() {
             <p className="text-muted-foreground text-center max-w-md">
               {hasEnterpriseAccess 
                 ? "Upload a standard high-resolution bone X-ray, or ask follow-up questions to the neural network."
-                : "Upload a standard high-resolution bone X-ray to begin. The AI will analyze cortical irregularities and provide an instant preliminary report."}
+                : limitStatus.limitReached
+                  ? `You have reached your daily upload limit of 1 scan. Next upload will be available in ${limitStatus.timeLeftStr}. Upgrade to Enterprise to remove this limit.`
+                  : "Upload a standard high-resolution bone X-ray to begin. The AI will analyze cortical irregularities and provide an instant preliminary report."}
             </p>
           </div>
         ) : (
@@ -239,11 +297,25 @@ export default function ChatPage() {
               
               {!hasEnterpriseAccess ? (
                 // --- BASIC MODE ---
-                <div className="flex-1 px-4 py-3">
-                  <p className="text-muted-foreground/70 text-[15px] font-medium flex items-center gap-2 select-none">
-                    <Activity className="w-4 h-4 opacity-50" />
-                    Upload an X-Ray scan to begin analysis...
+                <div className="flex-1 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className={`${limitStatus.limitReached ? "text-destructive/90 animate-pulse" : "text-muted-foreground/70"} text-[15px] font-medium flex items-center gap-2 select-none`}>
+                    {limitStatus.limitReached ? (
+                      <>
+                        <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+                        Daily limit reached. Next upload in <span className="font-semibold text-primary">{limitStatus.timeLeftStr}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Activity className="w-4 h-4 opacity-50 shrink-0" />
+                        Upload an X-Ray scan to begin analysis...
+                      </>
+                    )}
                   </p>
+                  {limitStatus.limitReached && (
+                    <Link href="/upgrade" className="text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                      <Zap className="w-3.5 h-3.5" /> Upgrade to Enterprise
+                    </Link>
+                  )}
                 </div>
               ) : (
                 // --- ENTERPRISE MODE ---
@@ -278,10 +350,10 @@ export default function ChatPage() {
               ) : (
                 <button
                   onClick={handleUploadClick}
-                  disabled={!session || isProcessing}
+                  disabled={!session || isProcessing || limitStatus.limitReached}
                   className={`relative h-12 px-6 rounded-xl font-bold flex items-center gap-2 transition-all duration-300 ${
-                    !session 
-                      ? "bg-muted text-muted-foreground cursor-not-allowed" 
+                    !session || limitStatus.limitReached
+                      ? "bg-muted text-muted-foreground cursor-not-allowed opacity-50" 
                       : isProcessing
                         ? "bg-primary/50 text-primary-foreground cursor-not-allowed"
                         : "bg-primary text-primary-foreground hover:bg-primary/90 btn-glow shadow-[0_0_20px_oklch(0.75_0.25_210/0.4)]"
@@ -291,6 +363,11 @@ export default function ChatPage() {
                     <>
                       <Loader2 className="w-5 h-5 animate-spin" />
                       Scanning
+                    </>
+                  ) : limitStatus.limitReached ? (
+                    <>
+                      <AlertCircle className="w-5 h-5" />
+                      Locked
                     </>
                   ) : (
                     <>
@@ -319,4 +396,41 @@ export default function ChatPage() {
 
     </div>
   );
+}
+
+function getUploadLimitStatus(email: string): { limitReached: boolean; timeLeftStr: string } {
+  if (typeof window === "undefined") {
+    return { limitReached: false, timeLeftStr: "" };
+  }
+  const lastUploadStr = localStorage.getItem(`med_ai_last_upload_${email}`);
+  if (!lastUploadStr) {
+    return { limitReached: false, timeLeftStr: "" };
+  }
+  const lastUpload = parseInt(lastUploadStr, 10);
+  if (isNaN(lastUpload)) {
+    return { limitReached: false, timeLeftStr: "" };
+  }
+  
+  const now = Date.now();
+  const diff = now - lastUpload;
+  const twentyFourHours = 24 * 60 * 60 * 1000;
+  
+  if (diff < twentyFourHours) {
+    const remainingMs = twentyFourHours - diff;
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    
+    let timeLeftStr = "";
+    if (hours > 0) {
+      timeLeftStr += `${hours}h `;
+    }
+    if (minutes > 0 || hours === 0) {
+      timeLeftStr += `${minutes > 0 ? minutes : 1}m`;
+    }
+    
+    return { limitReached: true, timeLeftStr };
+  }
+  
+  return { limitReached: false, timeLeftStr: "" };
 }

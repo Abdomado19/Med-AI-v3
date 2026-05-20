@@ -78,7 +78,7 @@ function Footer() {
           <div className="lg:col-span-3">
             <h3 className="text-sm font-bold text-foreground tracking-wider uppercase mb-6">Legal & Security</h3>
             <ul className="flex flex-col gap-4">
-              {["Privacy Policy", "Terms of Service", "HIPAA Compliance", "FDA Clearance Status", "System Status"].map((item) => (
+              {["Privacy Policy", "Terms of Service", "System Status"].map((item) => (
                 <li key={item}>
                   <Link href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors flex items-center gap-2 group">
                     <span className="w-0 h-[1px] bg-primary group-hover:w-3 transition-all duration-300" />

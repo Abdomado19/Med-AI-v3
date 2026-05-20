@@ -26,8 +26,12 @@ export async function POST(req: Request) {
       if (!predictRes.ok) {
         const errorText = await predictRes.text().catch(() => "Unknown error");
         console.error("Predict API error:", predictRes.status, errorText);
+        
+        // Use friendly detector to catch quota issues in the error text
+        const friendlyMessage = getFriendlyMessage(errorText.length > 5 ? errorText : `Inference Error: (Status: ${predictRes.status})`);
+        
         return NextResponse.json(
-          { message: `Inference Error: The neural network could not process this image. (Status: ${predictRes.status})` },
+          { message: friendlyMessage },
           { status: 200 }
         );
       }
@@ -39,6 +43,7 @@ export async function POST(req: Request) {
       const confidence = typeof predictionData.classification_confidence === "number"
         ? predictionData.classification_confidence
         : null;
+      const visualization = predictionData.visualization || null;
 
       // Step 2: Send prediction results to generate a detailed report
       try {
@@ -56,7 +61,7 @@ export async function POST(req: Request) {
             const cleanReport = stripHtml(rawReport);
             return NextResponse.json({
               message: cleanReport,
-              metadata: { type: "scan", hasTumor, confidence },
+              metadata: { type: "scan", hasTumor, confidence, visualization },
             });
           }
         }
@@ -67,7 +72,7 @@ export async function POST(req: Request) {
       // Fallback: if report generation failed, return a clean prediction summary
       return NextResponse.json({
         message: formatPrediction(predictionData),
-        metadata: { type: "scan", hasTumor, confidence },
+        metadata: { type: "scan", hasTumor, confidence, visualization },
       });
     }
 
@@ -91,8 +96,8 @@ export async function POST(req: Request) {
       const chatData = await chatRes.json();
       const rawReply = chatData.answer || chatData.response || chatData.reply || chatData.message || JSON.stringify(chatData);
 
-      // Strip any HTML the chat endpoint might return
-      return NextResponse.json({ message: stripHtml(rawReply) });
+      // Sanitize and return a friendly message if it's a technical error
+      return NextResponse.json({ message: getFriendlyMessage(rawReply) });
     }
 
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
@@ -129,6 +134,32 @@ function stripHtml(html: string): string {
     // Clean up excessive whitespace / blank lines
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/**
+ * Detects technical AI errors (like 429 Quota) and returns a human-friendly version.
+ */
+function getFriendlyMessage(rawMessage: string): string {
+  const lower = rawMessage.toLowerCase();
+  
+  // Detect Google Gemini / Hugging Face Quota Errors
+  if (
+    lower.includes("429") || 
+    lower.includes("resource_exhausted") || 
+    lower.includes("quota exceeded") ||
+    lower.includes("rate limit")
+  ) {
+    return "The AI engine is currently processing a high volume of requests. Please wait about 30 seconds and try again.";
+  }
+
+  // Detect general technical failures that return raw JSON
+  if (lower.includes("error") && (rawMessage.includes("{") || lower.includes("status:"))) {
+    // If it's a known inference error already handled by the frontend, keep it
+    if (rawMessage.startsWith("Inference Error")) return rawMessage;
+    return "System Error: The AI engine encountered an unexpected technical issue. Our team is investigating.";
+  }
+
+  return stripHtml(rawMessage);
 }
 
 /**

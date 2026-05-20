@@ -100,7 +100,7 @@ export default function ProfilePage() {
                   </h2>
                   <div className={`flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full w-max mt-1 border ${isEnterprise ? 'text-primary/90 bg-primary/10 border-primary/20' : 'text-muted-foreground bg-white/5 border-white/10'}`}>
                     <ShieldCheck className="w-3 h-3" />
-                    Verified Physician
+                    Verified User
                   </div>
                 </div>
               </div>

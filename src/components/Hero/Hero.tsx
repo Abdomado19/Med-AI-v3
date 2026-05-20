@@ -96,14 +96,14 @@ async function Hero() {
         </div>
 
         {/* Trusted By Banner */}
-        <div className="mt-20 pt-10 border-t border-border/50 text-center animate-slide-up delay-300">
+        {/* <div className="mt-20 pt-10 border-t border-border/50 text-center animate-slide-up delay-300">
           <p className="text-sm font-semibold uppercase tracking-widest text-muted-foreground mb-6">Designed to meet clinical standards</p>
           <div className="flex flex-wrap justify-center items-center gap-8 md:gap-16 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
              <div className="flex items-center gap-2 font-black text-xl"><ShieldCheck className="w-6 h-6"/> HIPAA COMPLIANT</div>
              <div className="flex items-center gap-2 font-black text-xl"><ShieldCheck className="w-6 h-6"/> FDA CLEARANCE PATH</div>
              <div className="flex items-center gap-2 font-black text-xl"><ShieldCheck className="w-6 h-6"/> ISO 27001</div>
           </div>
-        </div>
+        </div> */}
 
       </div>
     </section>
