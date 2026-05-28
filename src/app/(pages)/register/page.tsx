@@ -72,7 +72,7 @@ function Register() {
 
 
   return (
-    <div className='py-16 flex items-center justify-center flex-col gap-5'>
+    <div className='py-16 my-4 flex items-center justify-center flex-col gap-5'>
       <h2 className='text-xl font-bold'>Register now and Join US</h2>
         <div className='w-full sm:w-110 h-auto p-5 shadow border-2 border-gray-200 rounded-md'>
       

@@ -80,7 +80,9 @@ export default function LoginForm() {
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
                   <FieldLabel htmlFor="form-rhf-demo-email">
-                    Email
+                    <div className="font-semibold">
+                      Email
+                    </div>
                   </FieldLabel>
                   <Input
                     {...field}
@@ -100,7 +102,9 @@ export default function LoginForm() {
               render={({ field, fieldState }) => (
                 <Field data-invalid={fieldState.invalid}>
                   <FieldLabel htmlFor="form-rhf-demo-password">
-                    Password
+                    <div className="font-semibold">
+                      Password
+                    </div>
                   </FieldLabel>
                   <div className="relative">
                     <Input
